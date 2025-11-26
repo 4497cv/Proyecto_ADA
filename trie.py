@@ -164,18 +164,14 @@ class Trie:
             
         return results
 
-# -------------------------------
-# Ejemplo de uso
-# -------------------------------
-def main():
+def example():
     nltk.download('words')
     english_words = set(words.words())
 
     trie = Trie()
 
     for word in english_words:
-        trie.insert(word)  # Output: True or False
-
+        trie.insert(word)
 
     trie.insert("Hola mundo")
     trie.insert("Hola mamá")
@@ -190,5 +186,5 @@ def main():
     print(trie.search("Hola amigo"))
     # Buscar palabras similares
     print(trie.get_similar_words("Hola mam"))
-
-main()
+    
+    #example()
