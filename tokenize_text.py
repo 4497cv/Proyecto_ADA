@@ -16,4 +16,5 @@ texto = "Procesar un documento para determinar el uso de palabras en relación c
 
 tokens_frases = sent_tokenize(texto, language="spanish")
 
+
 print(tokens_frases)
