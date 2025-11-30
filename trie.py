@@ -5,6 +5,7 @@ import time
 import spacy
 from wordfreq import top_n_list
 from word_forms.word_forms import get_word_forms
+import re 
 
 class TrieNode:
     def __init__(self):
@@ -17,22 +18,7 @@ class Trie:
         self.root = TrieNode()
         self.all_words = []  # lista para recorrer fácilmente
         self.all_words_set = set()
-        # Descargar lista de palabras en inglés y agregarlas al Trie
-       # nltk.download('words')
 
-        # english_words = set(words.words())
-        # for word in english_words:
-        #     self.insert(word)
-        
-        # nlp = spacy.load("en_core_web_lg")
-
-        # new_w = 0
-        # for word in nlp.vocab:
-        #     if(word.is_alpha):
-        #         self.insert(word.text)
-        #         new_w +=1
-        
-        # self.number_of_words = len(self.all_words)
         # descargar lista de la palabras mas usadas
         words = top_n_list("en", 50000)  # 50k best English words
         
@@ -226,25 +212,25 @@ class Trie:
         Parametros:
         self : objeto tipo Trie
             Instancia de la clase Trie que llama a este método.
-        text : str
+        text : cadena de texto que contiene un parrafo que se desea insertar a la estructura trie
         """
-        # Get the list of English words
+        # separar las palabras del texto en diferentes tokens
         tokens_frases = sent_tokenize(text, language="spanish")
 
         for element in tokens_frases:
             self.insert(element)
 
-    def get_similar_phrases(self, phrase, max_ratio=0.1):
-        similar_phrases = []
-        for w in self.all_words:
-            dist = self.levenshtein_distance(phrase, w)
-
-            if((dist / max(len(phrase), len(w))) <= max_ratio):
-                similar_phrases.append(w)
-
-        return similar_phrases
-
     def get_node_frequency(self, word):
+        """
+        Funcion para obtener la frecuencia de uso de la palabra. La frecuencia de uso de la palabra se encuentra almacenada
+        en el ultimo nodo de la secuencia de la palabra y se lee el valor de esta.
+
+        Parametros:
+        self : objeto tipo Trie
+            Instancia de la clase Trie que llama a este método.
+        word : str
+            Palabra de entrada con la que se compararán las demás palabras.
+        """
         ret_val = 0
         node = self.root
         for ch in word:
@@ -269,27 +255,120 @@ class Trie:
         sorted_words = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)
         
         return sorted_words[:top_n]
+    
+    def starts_with(self, word, len=3):
+        """
+        Funcion para verificar si existe una palabra que comience con las primeras letras, que coincidan
+        con el tamaño de la longitud dada a la entrada.
+
+        Parametros:
+        self : objeto tipo Trie
+            Instancia de la clase Trie que llama a este método.
+        word : str
+            palabra a buscar
+        len : int
+            longitud de palabras iniciales a buscar
+        """
+        ret_val = False
+        # empezamos desde la raiz del arbol        
+        node = self.root
+        counter = 0
+
+        # buscamos el caracter en la estructura trie
+        for ch in word:
+            if(ch not in node.children):
+                # nos detenemos si la palabra buscada ya no coincide
+                ret_val = False
+                break
+            # asignamos el nodo como el hijo del anterior
+            node = node.children[ch]
+
+            if(counter >= len):
+                ret_val = True
+                break
+            else:
+                counter +=1
+    
+        return ret_val
+    
+    def process_text_optimized(self, words_list, suggestion_size = 3):
+        """
+        Funcion para realizar el procesamiento de un texto completo. 
+        Esta toma todas las palabras del texto y verifica que se encuentren 
+        definidas en la estructura Trie y las clasifica de manera que determina
+        si existe la palabra, si hay una palabra parecida o no existe y necesita 
+        ser agregada.
+
+        Parametros:
+        self : objeto tipo Trie
+            Instancia de la clase Trie que llama a este método.
+        words_list : list
+            lista de palabras a procesar.
+        len : int
+            longitud de palabras iniciales a buscar
+        """
+        found_words = []
+        similar_words = []
+        unfound_words = []
+
+        for word in words_list:
+            # convertimos la palabra a minusculas
+            word = word.lower()
+            # primero buscamos si la palabra existe con busqueda rapida
+            if(self.search(word)):
+                # insertamos la palabra en nuestra estructura para aumentar su frecuencia de uso
+                self.insert(word)
+                # agregar a lista de palabras encontradas
+                found_words.append(word)
+            elif(self.starts_with(word, 2)):
+                # obtenemos palabras similares
+                sim_word = self.get_similar_words(word, max_distance=3)
+                # reducir el nuemero de sugerencias
+                sim_word = sim_word[:suggestion_size]
+
+                # verficar que por lo menos haya una sugerencia
+                if(len(sim_word) > 0):
+                    # agregar a palabras similares
+                    similar_words.append((word, sim_word))
+                else:
+                    # agregar a palabras no encontradas si sim_word esta vacio
+                    unfound_words.append(word)
+            else:
+                # agregar a lista de palabras no encontradas
+                unfound_words.append(word)   
+
+        return found_words, similar_words, unfound_words
+
 
 def example():
-    nltk.download('words')
-    english_words = set(words.words())
     trie = Trie()
-
-    for word in english_words:
-        trie.insert(word)
-
-    # Buscar palabra exacta
-    print(trie.search("Hola amigo"))
-    # Buscar palabras similares
-    print(trie.get_similar_words("Hola mam"))
 
     texto = "Procesar un documento para determinar el uso de palabras en relación con otras; es decir, entender el estilo de redacción del autor y, al escribir más texto, recomendar palabras que se asocien con las frases escritas. Debe considerar las palabras utilizadas, el orden en que se emplean, su frecuencia, errores comunes, etc. \
              Además, la aplicación deberá ofrecer un sistema de búsqueda en tiempo real: conforme el usuario escribe cada letra de la frase que desea buscar, se le deben sugerir las n frases más frecuentemente utilizadas que comiencen con esas letras, o con letras similares si se considera que el usuario ha cometido un error de escritura. La cantidad de palabras y frases debe superar las 20,000.\
              Se deben considerar casos en los que el usuario intercambia letras, comete errores ortográficos o une palabras sin espacios. Para las frases, el sistema irá dando sugerencias y registrando las palabras empleadas, de modo que si se vuelve a escribir una frase, se sugiera primero aquella que ya fue utilizada anteriormente."
     
-    trie.insert_paragraph(texto)
+    text_trial = "Climate change are getting worst every year, and many peoples don’t realize how serius the problem really is. The temperature of the planet rise more faster than scientists was expecting, causing storms and weather events that is totally unpredictable. If we don’t take actions soon, the future generations will have much more dificulties to live in a healthy asdaszxa world."
+    words_list = re.split(r"[ .,]+", text_trial)
 
+    trie.insert("structure")
+    print(trie.search("structure"))
+    test = trie.starts_with("struc")
+    print(test)
 
-    print(trie.get_similar_phrases("Procesar un documento"))
+    found_words, similar_words, unfound_words = trie.process_text_optimized(words_list)
+
+    print("found words:")
+    for word in found_words: 
+        print(word)
+    
+    print("similar words:")
+    for word, sim_word in similar_words: 
+        print(word)
+        for w in sim_word:
+            print("- %s" % w)
+    
+    print("unfound_words words:")
+    for word in unfound_words: 
+        print(word)
     
 #example()
