@@ -113,6 +113,10 @@ class Trie:
         """
         size_word_a = len(word_a)
         size_word_b = len(word_b)
+
+        if abs(size_word_a - size_word_b) > 2:
+            return 99
+        
         dp_filas = size_word_a + 1
         dp_columnas = size_word_b + 1
 
@@ -123,20 +127,20 @@ class Trie:
         for i in range(dp_filas):
             dp[i][0] = i
 
-        # inicializamos primera fila
+        # inicializamos primera filar
         for i in range(dp_columnas):
             dp[0][i] = i
 
         for i in range(1, dp_filas):
+            fila_min = 999999
             for j in range(1, dp_columnas):
                 # calculamos el costo de quitar un caracter
                 delete_cost = dp[i-1][j] + 1
                 # calculamos el costo de insertar un caracter
                 insert_cost = dp[i][j-1] + 1
 
-                # calculamos el corto de sustitucion
-                if(word_a[i-1] == word_b[j-1]):
-                    subst_cost = dp[i-1][j-1] + 0
+                if word_a[i-1] == word_b[j-1]:
+                    subst_cost = dp[i-1][j-1]
                 else:
                     subst_cost = dp[i-1][j-1] + 1
 
@@ -154,7 +158,14 @@ class Trie:
                 # guardamos la solucion de menor costo
                 dp[i][j] = min_cost
 
+                if min_cost < fila_min:
+                    fila_min = min_cost
+
+            if fila_min > 2:
+                return 99
+
         return dp[size_word_a][size_word_b]
+
 
     def get_similar_words(self, word, max_distance=2):
         """
@@ -173,12 +184,19 @@ class Trie:
         max_distance : int, opcional (por defecto=2)
             Distancia máxima de edición permitida para considerar palabras similares
         """
+        similar_words = []
+        results = []
+        word = word.lower()
+
+
         # arreglo para ala
         similar_words = []
         results = []
         
         # iteramos entre las palabras almacenadas 
         for w in self.all_words:
+            if abs(len(word) - len(w)) > 2:
+                continue
             # calculamos el edit distance entre la palabra de entrada y la encontrada en la estructura trie
             dist = self.levenshtein_distance(word, w)
 
@@ -190,7 +208,7 @@ class Trie:
         
         for w, _ in similar_words:
             results.append(w)
-                
+            
         return results
 
     def insert_paragraph(self, text):
@@ -273,7 +291,7 @@ class Trie:
 
         return True
     
-    def _dfs(self, node, prefix, results, max_lim=15):
+    def _dfs(self, node, prefix, results, max_lim=2):
         if node.is_eow:
             results.append(prefix)
 
@@ -294,6 +312,9 @@ class Trie:
         len : int
             longitud de palabras iniciales a buscar
         """
+        if(len(prefix) == 0):
+            return []
+        
         results = []
         # empezamos desde la raiz del arbol        
         node = self.root
@@ -344,13 +365,12 @@ class Trie:
                 autocomplete = self.autocomplete_prefix(word)
                 if(len(autocomplete) > 0):
                     print("AUTOCOMPLETE: %s" % word)
-                    for sim_word in autocomplete:
-                        similar_words.append((word, sim_word))
+                    similar_words.append((word, autocomplete))
                     print(similar_words)      
                 else:
                     # asumimos que la palabra esta mal escrita y buscamos la que mas se aproxime
                     # obtenemos palabras similares
-                    sim_word = self.get_similar_words(word, max_distance=3)
+                    sim_word = self.get_similar_words(word, max_distance=2)
                     # reducir el nuemero de sugerencias
                     sim_word = sim_word[:suggestion_size]
 
