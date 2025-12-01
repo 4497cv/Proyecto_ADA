@@ -34,19 +34,17 @@ label_time.pack(pady=5)
 label_wordcount = tk.Label(side_panel, text="Palabras: 0", font=("Arial", 10))
 label_wordcount.pack(pady=5)
 
-
 # --- Función para actualizar estadísticas ---
 def update_stats(time_seconds, word_count):
     label_time.config(text=f"Tiempo: {time_seconds*1000:.2f} ms")
     label_wordcount.config(text=f"Palabras: {word_count}")
-
 
 # --- Procesar TODO el texto ---
 def process_full_text():
     start_time = time.time()
 
     text = text_widget.get("1.0", "end-1c")
-    words_list = re.split(r"[ .,]+", text)
+    words_list = re.split(r"[\s.,;:!?()\"'\-]+", text)
 
     # quitar resaltados anteriores
     text_widget.tag_remove("similar", "1.0", tk.END)
@@ -84,28 +82,56 @@ def process_full_text():
     elapsed = time.time() - start_time
     update_stats(elapsed, len(words_list))
 
-
-# --- Analizar última palabra escrita ---
+# --- Revisar la última palabra al presionar espacio o Enter ---
 def check_last_word(event=None):
     if event.keysym not in ("space", "Return"):
         return
-    process_full_text()
+
+    # Obtener todo el texto hasta el cursor
+    cursor_index = text_widget.index("insert")
+    text_up_to_cursor = text_widget.get("1.0", cursor_index)
+
+    # Tomar las palabras, ignorando vacíos
+    words = [w for w in re.split(r"[\s.,;:!?()\"'-]+", text_up_to_cursor) if w]
+    if not words:
+        return
+
+    last_word = words[-1].lower()
+
+    # Buscar la última ocurrencia de la palabra en el texto hasta el cursor
+    start_idx = text_up_to_cursor.rfind(last_word)
+    start_index = f"1.0 + {start_idx} chars"
+    end_index = f"{start_index} + {len(last_word)} chars"
+
+    # quitar resaltado previo solo para esta palabra
+    text_widget.tag_remove("similar", start_index, end_index)
+    text_widget.tag_remove("unfound", start_index, end_index)
+
+    # verificar palabra en Trie
+    if trie.search(last_word):
+        trie.insert(last_word)  # aumentar frecuencia
+    elif trie.starts_with(last_word, 2):
+        similar_words = trie.get_similar_words(last_word, max_distance=2)
+        if similar_words:
+            text_widget.tag_add("similar", start_index, end_index)
+        else:
+            text_widget.tag_add("unfound", start_index, end_index)
+    else:
+        text_widget.tag_add("unfound", start_index, end_index)
 
 
-# --- Mostrar sugerencias al hacer clic ---
+
+# --- Mostrar sugerencias al hacer doble clic ---
 def show_suggestions(event):
     index = text_widget.index(f"@{event.x},{event.y}")
     tags = text_widget.tag_names(index)
 
-    # ============================
-    #   CASO: PALABRA SIMILAR
-    # ============================
+    # PALABRA SIMILAR
     if "similar" in tags:
         word_start = text_widget.index(f"{index} wordstart")
         word_end = text_widget.index(f"{index} wordend")
         word = text_widget.get(word_start, word_end)
 
-        # buscar sugerencias directamente del Trie
         similar_words = trie.get_similar_words(word, max_distance=2)
 
         if similar_words:
@@ -128,14 +154,11 @@ def show_suggestions(event):
                 text_widget.delete(word_start, word_end)
                 text_widget.insert(word_start, selection)
                 popup.destroy()
-                process_full_text()
+                # No procesamos todo el texto aquí
 
             listbox.bind("<Double-Button-1>", replace_word)
 
-
-    # ============================
-    #   CASO: PALABRA NO ENCONTRADA
-    # ============================
+    # PALABRA NO ENCONTRADA
     if "unfound" in tags:
         word_start = text_widget.index(f"{index} wordstart")
         word_end = text_widget.index(f"{index} wordend")
@@ -151,20 +174,16 @@ def show_suggestions(event):
 
         def add_word():
             trie.insert(word)
-
-            # quitar azul SOLO a esta palabra antes de recalcular
             text_widget.tag_remove("unfound", word_start, word_end)
-
             popup.destroy()
-            process_full_text()  # recolorear todo
+            # No procesamos todo el texto aquí
 
         btn = tk.Button(popup, text="Agregar al diccionario", command=add_word)
         btn.pack(padx=5, pady=10)
 
-
 # --- Mostrar palabras más frecuentes ---
 def show_most_frequent():
-    top_words = trie.get_most_frequent_words(trie, top_n=10)
+    top_words = trie.get_most_frequent_words(top_n=10)
     if not top_words:
         return
 
@@ -182,17 +201,12 @@ def show_most_frequent():
     for word, freq in top_words:
         listbox.insert(tk.END, f"{word} : {freq}")
 
-
-# ---- Botón para mostrar palabras frecuentes -----
-button = tk.Button(root, text="Mostrar palabras frecuentes", command=show_most_frequent)
-button.pack(pady=5)
-
-# ---- Botón para procesar texto completo -----
-process_button = tk.Button(root, text="Procesar texto completo", command=process_full_text)
-process_button.pack(pady=5)
+# ---- Botones ----
+tk.Button(root, text="Mostrar palabras frecuentes", command=show_most_frequent).pack(pady=5)
+tk.Button(root, text="Procesar texto completo", command=process_full_text).pack(pady=5)
 
 # ------------------ Eventos ---------------------
 text_widget.bind("<KeyRelease>", check_last_word)
-text_widget.bind("<Button-1>", show_suggestions)
+text_widget.bind("<Double-Button-1>", show_suggestions)
 
 root.mainloop()

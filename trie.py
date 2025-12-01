@@ -167,7 +167,7 @@ class Trie:
         return dp[size_word_a][size_word_b]
 
 
-    def get_similar_words(self, word, max_distance=2):
+    def get_similar_words(self, word, max_distance=2, result_size=5):
         """
         Funcion para obtener las palabras encontradas en la estructura que tengan mayor similitud 
         con la palabra de entrada. 
@@ -187,16 +187,16 @@ class Trie:
         similar_words = []
         results = []
         word = word.lower()
-
-
-        # arreglo para ala
-        similar_words = []
-        results = []
         
         # iteramos entre las palabras almacenadas 
         for w in self.all_words:
-            if abs(len(word) - len(w)) > 2:
+            if(len(w) < 3):
+                # evitamos palabras demasiado cortas
+                continue 
+
+            if((abs(len(w) - len(word))) > max_distance):
                 continue
+            
             # calculamos el edit distance entre la palabra de entrada y la encontrada en la estructura trie
             dist = self.levenshtein_distance(word, w)
 
@@ -209,7 +209,7 @@ class Trie:
         for w, _ in similar_words:
             results.append(w)
             
-        return results
+        return results[:result_size]
 
     def insert_paragraph(self, text):
         """
