@@ -114,8 +114,11 @@ class Trie:
         """
         size_word_a = len(word_a)
         size_word_b = len(word_b)
+        diff_word_size = abs(size_word_a - size_word_b) 
+        
+        # evitar procesamiento si la longitud de ambas palabras es mayor a 2 caracteres
 
-        if abs(size_word_a - size_word_b) > 2:
+        if diff_word_size > 2:
             return 99
         
         dp_filas = size_word_a + 1
@@ -140,7 +143,7 @@ class Trie:
                 # calculamos el costo de insertar un caracter
                 insert_cost = dp[i][j-1] + 1
 
-                if word_a[i-1] == word_b[j-1]:
+                if(word_a[i-1] == word_b[j-1]):
                     subst_cost = dp[i-1][j-1]
                 else:
                     subst_cost = dp[i-1][j-1] + 1
@@ -158,7 +161,8 @@ class Trie:
 
                 # guardamos la solucion de menor costo
                 dp[i][j] = min_cost
-
+                
+                # se guarda la distancia mas pequeña encontraada en la fila
                 if min_cost < fila_min:
                     fila_min = min_cost
 
@@ -255,7 +259,8 @@ class Trie:
 
     def get_most_frequent_words(self, top_n=10):
         word_freq = {}
-        for word in set(self.all_words):
+
+        for word in self.all_words:
             freq = self.get_node_freq(word)
             word_freq[word] = freq
         
@@ -292,14 +297,30 @@ class Trie:
 
         return True
     
-    def _dfs(self, node, prefix, results, max_lim=2):
+    def __dfs(self, node, prefix, results, max_lim=3):
+        """
+        Funcion para realizar busqueda por profundidad DFS para 
+
+        Parametros:
+        self : objeto tipo Trie
+            Instancia de la clase Trie que llama a este método.
+        node : TrieNode
+            Nodo de la clase Trie
+        prefix : str
+            conjunto de letras al inicio de la palabra
+        results: list
+            resultados encontrados que incluyan el prefijo
+        """
+        # agregar el prefijo a los resultados si estamos al final de la palabra
         if node.is_eow:
             results.append(prefix)
 
         for ch, child_node in node.children.items():
+            # limitamos la cantidad de resultados a max_lim
             if(len(results) >= max_lim):
                 return
-            self._dfs(child_node, prefix + ch, results)
+            # empleamos recursion y vamos recorriendo los nodos subsecuentes hasta encontrar el final de la palabra
+            self.__dfs(child_node, prefix + ch, results)
     
     def autocomplete_prefix(self, prefix):
         """
@@ -329,7 +350,7 @@ class Trie:
             node = node.children[ch]
 
         # busqueda por profundidad (DFS)
-        self._dfs(node, prefix, results)
+        self.__dfs(node, prefix, results)
         return results
 
 
@@ -365,7 +386,6 @@ class Trie:
             elif(self.starts_with(word, 2)):
                 autocomplete = self.autocomplete_prefix(word)
                 if(len(autocomplete) > 0):
-                    print("AUTOCOMPLETE: %s" % word)
                     similar_words.append((word, autocomplete))
                     print(similar_words)      
                 else:
@@ -377,7 +397,6 @@ class Trie:
 
                     # verficar que por lo menos haya una sugerencia
                     if(len(sim_word) > 0):
-                        print("MISPELLED: %s" % word)
                         # agregar a palabras similares
                         similar_words.append((word, sim_word))
                     else:

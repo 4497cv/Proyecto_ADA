@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import font, filedialog, messagebox
 import re
-from trie import Trie
+from trie import Trie  # tu clase Trie
 
 # --- Ventana principal ---
 root = tk.Tk()
@@ -22,6 +22,7 @@ def change_language(lang):
     current_language.set(lang)
     trie = Trie(lang, 50000)
     language_label.config(text="English" if lang == "en" else "Spanish")
+    process_text()
 
 # --- Funciones de menú ---
 def new_file():
@@ -35,7 +36,7 @@ def open_file():
         with open(file_path, "r", encoding="utf-8") as f:
             text_widget.delete("1.0", tk.END)
             text_widget.insert("1.0", f.read())
-        update_word_count()
+        process_text()
 
 def save_file():
     file_path = filedialog.asksaveasfilename(defaultextension=".txt",
@@ -46,7 +47,7 @@ def save_file():
 
 def show_metrics():
     text = text_widget.get("1.0", tk.END)
-    words = [w for w in re.split(r"[\s.,;:!?()\"'-]+", text) if w]
+    words = [w for w in re.findall(r"\b\w+\b", text)]
     messagebox.showinfo("Metrics", f"Número de palabras: {len(words)}")
 
 def show_word_frequency():
@@ -62,39 +63,40 @@ def show_word_frequency():
     label.pack(pady=5)
     listbox = tk.Listbox(popup, font=("Roboto", 10), bg="white", fg="#333")
     listbox.pack(fill="both", expand=True, padx=10, pady=10)
-    for w in top_words:
-        listbox.insert(tk.END, w)
+    for w, freq in top_words:
+        listbox.insert(tk.END, f"{w} ({freq})")
 
+# --- Función para procesar texto completo ---
 def process_text():
-    """Procesa todo el texto, aplica tags y actualiza Trie"""
+    """Procesa todo el texto y aplica tags, ignorando signos de puntuación"""
     text = text_widget.get("1.0", tk.END)
-    words = [w for w in re.split(r"([\s.,;:!?()\"'-]+)", text) if w]  # Mantener separadores
     text_widget.tag_remove("similar", "1.0", tk.END)
     text_widget.tag_remove("unfound", "1.0", tk.END)
 
-    index = "1.0"
-    for w in words:
-        if re.fullmatch(r"[\s.,;:!?()\"'-]+", w):  # separadores
-            index = text_widget.index(f"{index} + {len(w)}c")
+    # Solo palabras, sin signos de puntuación
+    words_list = [w for w in re.findall(r"\b\w+\b", text)]
+    found_words, similar_words, unfound_words = trie.process_text_optimized(words_list)
+
+    # aplicar tags en Text
+    for match in re.finditer(r"\b\w+\b", text):
+        word = match.group()
+        start_index = f"1.0 + {match.start()}c"
+        end_index = f"1.0 + {match.end()}c"
+        word_lower = word.lower()
+        if word_lower in found_words:
             continue
-
-        w_lower = w.lower()
-        start_index = index
-        end_index = text_widget.index(f"{start_index} + {len(w)}c")
-
-        if trie.search(w_lower):
-            trie.insert(w_lower)
-        else:
-            similar_words = trie.get_similar_words(w_lower, max_distance=2)
-            if similar_words:
-                text_widget.tag_add("similar", start_index, end_index)
-            else:
-                text_widget.tag_add("unfound", start_index, end_index)
-
-        index = end_index
+        elif any(word_lower == w for w, _ in similar_words):
+            text_widget.tag_add("similar", start_index, end_index)
+        elif word_lower in unfound_words:
+            text_widget.tag_add("unfound", start_index, end_index)
 
     update_word_count()
-    messagebox.showinfo("Process Text", "Procesamiento completo finalizado.")
+
+# --- Función para pegar y procesar automáticamente ---
+def on_paste(event=None):
+    text_widget.event_generate("<<Paste>>")
+    root.after(10, process_text)  # procesar después del pegado
+    return "break"
 
 # --- Menú superior ---
 menu_bar = tk.Menu(root)
@@ -139,8 +141,9 @@ text_widget.config(yscrollcommand=scrollbar.set)
 
 text_widget.tag_configure("similar", underline=True, foreground="#ff4d4f")
 text_widget.tag_configure("unfound", underline=True, foreground="#1890ff")
+text_widget.tag_configure("black", foreground="#333")  # para palabras agregadas
 
-# --- Label inferior (izquierda y derecha) ---
+# --- Label inferior ---
 status_frame = tk.Frame(root, bg="#f8f8f8")
 status_frame.pack(fill="x", side="bottom", padx=20, pady=5)
 
@@ -153,10 +156,10 @@ language_label.pack(side="right")
 # --- Función para actualizar contador de palabras ---
 def update_word_count(event=None):
     text = text_widget.get("1.0", tk.END)
-    words = [w for w in re.split(r"[\s.,;:!?()\"'-]+", text) if w]
+    words = [w for w in re.findall(r"\b\w+\b", text)]
     word_count_label.config(text=f"{len(words)} palabra{'s' if len(words)!=1 else ''}")
 
-# --- Función para mostrar sugerencias ---
+# --- Sugerencias ---
 suggestion_popup = None
 def show_suggestions(event):
     global suggestion_popup
@@ -167,49 +170,86 @@ def show_suggestions(event):
     word_start = text_widget.index(f"{index} wordstart")
     word_end = text_widget.index(f"{index} wordend")
     word = text_widget.get(word_start, word_end)
+
+    suggestions = []
     if "similar" in tags:
         suggestions = trie.get_similar_words(word, max_distance=2)
     elif "unfound" in tags:
-        suggestions = ["Agregar al diccionario"]
-    else:
+        suggestions = []
+
+    # Separar con línea divisoria la opción de agregar palabra
+    suggestions.append("---")
+    suggestions.append("Agregar al diccionario")
+
+    if not suggestions: 
         return
-    if not suggestions: return
+
     suggestion_popup = tk.Toplevel(root)
     suggestion_popup.wm_overrideredirect(True)
     suggestion_popup.geometry(f"+{event.x_root+10}+{event.y_root+10}")
     suggestion_popup.configure(bg="#2c2c2c")
+
+    # Cerrar popup si se hace clic fuera
+    def close_popup(event_inner):
+        if suggestion_popup and suggestion_popup.winfo_exists():
+            suggestion_popup.destroy()
+        root.unbind("<Button-1>")
+
+    root.bind("<Button-1>", close_popup)
+
     label = tk.Label(suggestion_popup, text=f"Sugerencias para '{word}':",
                      bg="#2c2c2c", fg="white", font=("Roboto", 10, "bold"), anchor="w")
     label.pack(fill="x", padx=5, pady=5)
+
     listbox = tk.Listbox(suggestion_popup, bg="#2c2c2c", fg="white",
                          selectbackground="#4a90e2", selectforeground="white",
                          highlightthickness=0, relief="flat", font=("Roboto", 10))
     listbox.pack(fill="both", padx=5, pady=5)
+
     for s in suggestions:
         listbox.insert(tk.END, s)
+
     def replace_word(e):
         selection = listbox.get(listbox.curselection())
         if selection == "Agregar al diccionario":
             trie.insert(word.lower())
             text_widget.tag_remove("unfound", word_start, word_end)
+            text_widget.tag_remove("similar", word_start, word_end)
+            text_widget.tag_add("black", word_start, word_end)
+            process_text()
+        elif selection == "---":
+            return
         else:
             text_widget.delete(word_start, word_end)
             text_widget.insert(word_start, selection)
-        suggestion_popup.destroy()
+            text_widget.tag_remove("unfound", word_start, word_end)
+            text_widget.tag_remove("similar", word_start, word_end)
+        if suggestion_popup and suggestion_popup.winfo_exists():
+            suggestion_popup.destroy()
+        root.unbind("<Button-1>")
+
     listbox.bind("<Double-Button-1>", replace_word)
 
 # --- Revisar última palabra ---
 def check_last_word(event=None):
-    if event.keysym not in ("space", "Return"): return
+    if event.keysym not in ("space", "Return", "period", "comma", "exclam", "question"): 
+        return
+
     cursor_index = text_widget.index("insert")
     text_up_to_cursor = text_widget.get("1.0", cursor_index)
-    words = [w for w in re.split(r"[\s.,;:!?()\"'-]+", text_up_to_cursor) if w]
-    if not words: return
+    words = [w for w in re.findall(r"\b\w+\b", text_up_to_cursor)]
+    if not words:
+        return
+
     last_word = words[-1].lower()
-    start_index = f"{cursor_index} - {len(last_word)+1}c"
-    end_index = f"{cursor_index} - 1c"
+    match_iter = list(re.finditer(r"\b\w+\b", text_up_to_cursor))
+    last_match = match_iter[-1]
+    start_index = f"1.0 + {last_match.start()}c"
+    end_index = f"1.0 + {last_match.end()}c"
+
     text_widget.tag_remove("similar", start_index, end_index)
     text_widget.tag_remove("unfound", start_index, end_index)
+
     if trie.search(last_word):
         trie.insert(last_word)
     else:
@@ -222,6 +262,8 @@ def check_last_word(event=None):
 # --- Eventos ---
 text_widget.bind("<KeyRelease>", lambda event: [check_last_word(event), update_word_count(event)])
 text_widget.bind("<Double-Button-1>", show_suggestions)
+text_widget.bind("<Control-v>", lambda e: on_paste())
+text_widget.bind("<Shift-Insert>", lambda e: on_paste())
 
 # --- Ejecutar aplicación ---
 root.mainloop()
