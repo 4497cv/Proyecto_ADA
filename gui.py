@@ -1,212 +1,177 @@
-import tkinter as tk 
-import time
-from trie import Trie  # Importar tu clase Trie desde trie.py
+import tkinter as tk
+from tkinter import font
 import re
-
-# Crear el Trie
-trie = Trie()
+from trie import Trie  # Asegúrate de que tu clase Trie acepte idioma y número de palabras
 
 # --- Ventana principal ---
 root = tk.Tk()
 root.title("Editor estilo Word con sugerencias")
+root.geometry("800x600")
+root.configure(bg="#f8f8f8")
 
-# ---- Frame principal con texto y panel lateral ----
-main_frame = tk.Frame(root)
-main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+# --- Fuente personalizada ---
+text_font = font.Font(family="Roboto", size=12)
 
-# ---- Widget de texto ----
-text_widget = tk.Text(main_frame, wrap="word", width=60, height=20)
-text_widget.grid(row=0, column=0, padx=10, pady=10)
+# --- Variables de idioma ---
+current_language = tk.StringVar(value="en")  # idioma actual
+trie = Trie(current_language.get(), 50000)  # Trie inicial en inglés
 
-text_widget.tag_configure("similar", underline=True, foreground="red")
-text_widget.tag_configure("unfound", underline=True, foreground="blue")
+# --- Función para cambiar idioma ---
+def change_language(lang):
+    global trie
+    trie = Trie(lang, 50000)  # recargar Trie con palabras del idioma seleccionado
 
-# ---- Panel lateral para estadísticas ----
-side_panel = tk.Frame(main_frame)
-side_panel.grid(row=0, column=1, padx=10, pady=10, sticky="n")
+# --- Frame principal ---
+main_frame = tk.Frame(root, bg="#f8f8f8")
+main_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
-label_title = tk.Label(side_panel, text="Estadísticas", font=("Arial", 12, "bold"))
-label_title.pack(pady=5)
+# --- Widget de texto ---
+text_widget = tk.Text(
+    main_frame, wrap="word", font=text_font, undo=True, relief="flat", bd=0,
+    bg="white", fg="#333333", insertbackground="#333333"
+)
+text_widget.pack(fill="both", expand=True, side="left", padx=(0,10), pady=10)
 
-label_time = tk.Label(side_panel, text="Tiempo: 0.0 ms", font=("Arial", 10))
-label_time.pack(pady=5)
+# --- Scrollbar ---
+scrollbar = tk.Scrollbar(main_frame, command=text_widget.yview)
+scrollbar.pack(side="right", fill="y")
+text_widget.config(yscrollcommand=scrollbar.set)
 
-label_wordcount = tk.Label(side_panel, text="Palabras: 0", font=("Arial", 10))
-label_wordcount.pack(pady=5)
+# --- Configurar estilos de tags ---
+text_widget.tag_configure("similar", underline=True, foreground="#ff4d4f")  # rojo
+text_widget.tag_configure("unfound", underline=True, foreground="#1890ff")  # azul
 
-# --- Función para actualizar estadísticas ---
-def update_stats(time_seconds, word_count):
-    label_time.config(text=f"Tiempo: {time_seconds*1000:.2f} ms")
-    label_wordcount.config(text=f"Palabras: {word_count}")
+# --- Función para mostrar sugerencias ---
+suggestion_popup = None
+def show_suggestions(event):
+    global suggestion_popup
+    if suggestion_popup and suggestion_popup.winfo_exists():
+        suggestion_popup.destroy()
 
-# --- Procesar TODO el texto ---
-def process_full_text():
-    start_time = time.time()
+    index = text_widget.index(f"@{event.x},{event.y}")
+    tags = text_widget.tag_names(index)
 
-    text = text_widget.get("1.0", "end-1c")
-    words_list = re.split(r"[\s.,;:!?()\"'\-]+", text)
+    word_start = text_widget.index(f"{index} wordstart")
+    word_end = text_widget.index(f"{index} wordend")
+    word = text_widget.get(word_start, word_end)
 
-    # quitar resaltados anteriores
-    text_widget.tag_remove("similar", "1.0", tk.END)
-    text_widget.tag_remove("unfound", "1.0", tk.END)
+    if "similar" in tags:
+        suggestions = trie.get_similar_words(word, max_distance=2)
+    elif "unfound" in tags:
+        suggestions = ["Agregar al diccionario"]
+    else:
+        return
 
-    # obtener resultados del Trie
-    found_words, similar_words, unfound_words = trie.process_text_optimized(words_list)
+    if not suggestions:
+        return
 
-    # sets para búsqueda rápida
-    similar_set = {w.lower() for w, sug in similar_words}
-    unfound_set = {w.lower() for w in unfound_words}
+    suggestion_popup = tk.Toplevel(root)
+    suggestion_popup.wm_overrideredirect(True)
+    suggestion_popup.geometry(f"+{event.x_root+10}+{event.y_root+10}")
+    suggestion_popup.configure(bg="#2c2c2c")
 
-    # recorrer texto y marcar
-    for word in words_list:
-        w = word.lower()
-        if not w:
-            continue
+    label = tk.Label(
+        suggestion_popup,
+        text=f"Sugerencias para '{word}':",
+        bg="#2c2c2c",
+        fg="white",
+        font=("Roboto", 10, "bold"),
+        anchor="w"
+    )
+    label.pack(fill="x", padx=5, pady=5)
 
-        start_idx = "1.0"
-        while True:
-            pos = text_widget.search(w, start_idx, tk.END, nocase=1)
-            if not pos:
-                break
+    listbox = tk.Listbox(
+        suggestion_popup,
+        bg="#2c2c2c",
+        fg="white",
+        selectbackground="#4a90e2",
+        selectforeground="white",
+        highlightthickness=0,
+        relief="flat",
+        font=("Roboto", 10)
+    )
+    listbox.pack(fill="both", padx=5, pady=5)
 
-            end_pos = f"{pos}+{len(w)}c"
+    for s in suggestions:
+        listbox.insert(tk.END, s)
 
-            if w in similar_set:
-                text_widget.tag_add("similar", pos, end_pos)
+    def replace_word(e):
+        selection = listbox.get(listbox.curselection())
+        if selection == "Agregar al diccionario":
+            trie.insert(word.lower())
+            text_widget.tag_remove("unfound", word_start, word_end)
+        else:
+            text_widget.delete(word_start, word_end)
+            text_widget.insert(word_start, selection)
+        suggestion_popup.destroy()
 
-            if w in unfound_set:
-                text_widget.tag_add("unfound", pos, end_pos)
+    listbox.bind("<Double-Button-1>", replace_word)
 
-            start_idx = end_pos
+def show_top_words():
+    # Obtener, por ejemplo, las 20 palabras más frecuentes
+    top_words = trie.get_most_frequent_words(10)  # tu Trie debe tener un método get_top_words()
+    if not top_words:
+        return
 
-    elapsed = time.time() - start_time
-    update_stats(elapsed, len(words_list))
+    popup = tk.Toplevel(root)
+    popup.title("Palabras frecuentes")
+    popup.geometry("300x400")
+    popup.configure(bg="white")
+
+    label = tk.Label(popup, text="Palabras más frecuentes:", font=("Roboto", 10, "bold"), bg="white")
+    label.pack(pady=5)
+
+    listbox = tk.Listbox(popup, font=("Roboto", 10), bg="white", fg="#333")
+    listbox.pack(fill="both", expand=True, padx=10, pady=10)
+
+    for w in top_words:
+        listbox.insert(tk.END, w)
 
 # --- Revisar la última palabra al presionar espacio o Enter ---
 def check_last_word(event=None):
     if event.keysym not in ("space", "Return"):
         return
 
-    # Obtener todo el texto hasta el cursor
     cursor_index = text_widget.index("insert")
     text_up_to_cursor = text_widget.get("1.0", cursor_index)
 
-    # Tomar las palabras, ignorando vacíos
     words = [w for w in re.split(r"[\s.,;:!?()\"'-]+", text_up_to_cursor) if w]
     if not words:
         return
 
     last_word = words[-1].lower()
+    start_index = f"{cursor_index} - {len(last_word)+1}c"
+    end_index = f"{cursor_index} - 1c"
 
-    # Buscar la última ocurrencia de la palabra en el texto hasta el cursor
-    start_idx = text_up_to_cursor.rfind(last_word)
-    start_index = f"1.0 + {start_idx} chars"
-    end_index = f"{start_index} + {len(last_word)} chars"
-
-    # quitar resaltado previo solo para esta palabra
+    # Limpiar tags previos
     text_widget.tag_remove("similar", start_index, end_index)
     text_widget.tag_remove("unfound", start_index, end_index)
 
-    # verificar palabra en Trie
+    # Verificar la palabra en el Trie
     if trie.search(last_word):
-        trie.insert(last_word)  # aumentar frecuencia
-    elif trie.starts_with(last_word, 2):
+        trie.insert(last_word)
+    else:
         similar_words = trie.get_similar_words(last_word, max_distance=2)
         if similar_words:
             text_widget.tag_add("similar", start_index, end_index)
         else:
             text_widget.tag_add("unfound", start_index, end_index)
-    else:
-        text_widget.tag_add("unfound", start_index, end_index)
 
+# --- Botones flotantes y selección de idioma ---
+button_frame = tk.Frame(root, bg="#f8f8f8")
+button_frame.pack(fill="x", padx=20, pady=10)
 
+tk.Button(button_frame, text="Procesar texto completo", bg="#4a90e2", fg="white", relief="flat", command=lambda: None).pack(side="left", padx=5)
+tk.Button(button_frame, text="Mostrar palabras frecuentes", bg="#4a90e2", fg="white", relief="flat", command=show_top_words).pack(side="left", padx=5)
+# Menú de idioma
+lang_menu = tk.OptionMenu(button_frame, current_language, "en", "es", command=change_language)
+lang_menu.config(bg="#4a90e2", fg="white", relief="flat")
+lang_menu["menu"].config(bg="white", fg="black")
+lang_menu.pack(side="right", padx=5)
 
-# --- Mostrar sugerencias al hacer doble clic ---
-def show_suggestions(event):
-    index = text_widget.index(f"@{event.x},{event.y}")
-    tags = text_widget.tag_names(index)
-
-    # PALABRA SIMILAR
-    if "similar" in tags:
-        word_start = text_widget.index(f"{index} wordstart")
-        word_end = text_widget.index(f"{index} wordend")
-        word = text_widget.get(word_start, word_end)
-
-        similar_words = trie.get_similar_words(word, max_distance=2)
-
-        if similar_words:
-            popup = tk.Toplevel(root)
-            popup.title("Sugerencias")
-            popup.geometry(f"+{event.x_root}+{event.y_root}")
-            popup.transient(root)
-
-            label = tk.Label(popup, text=f"Sugerencias para '{word}':")
-            label.pack(padx=5, pady=5)
-
-            listbox = tk.Listbox(popup)
-            listbox.pack(padx=5, pady=5)
-
-            for s in similar_words:
-                listbox.insert(tk.END, s)
-
-            def replace_word(e):
-                selection = listbox.get(listbox.curselection())
-                text_widget.delete(word_start, word_end)
-                text_widget.insert(word_start, selection)
-                popup.destroy()
-                # No procesamos todo el texto aquí
-
-            listbox.bind("<Double-Button-1>", replace_word)
-
-    # PALABRA NO ENCONTRADA
-    if "unfound" in tags:
-        word_start = text_widget.index(f"{index} wordstart")
-        word_end = text_widget.index(f"{index} wordend")
-        word = text_widget.get(word_start, word_end).lower()
-
-        popup = tk.Toplevel(root)
-        popup.title("Palabra desconocida")
-        popup.geometry(f"+{event.x_root}+{event.y_root}")
-        popup.transient(root)
-
-        label = tk.Label(popup, text=f"'{word}' no está en el diccionario")
-        label.pack(padx=5, pady=5)
-
-        def add_word():
-            trie.insert(word)
-            text_widget.tag_remove("unfound", word_start, word_end)
-            popup.destroy()
-            # No procesamos todo el texto aquí
-
-        btn = tk.Button(popup, text="Agregar al diccionario", command=add_word)
-        btn.pack(padx=5, pady=10)
-
-# --- Mostrar palabras más frecuentes ---
-def show_most_frequent():
-    top_words = trie.get_most_frequent_words(top_n=10)
-    if not top_words:
-        return
-
-    popup = tk.Toplevel(root)
-    popup.title("Palabras más frecuentes")
-    popup.geometry("+200+200")
-    popup.transient(root)
-
-    label = tk.Label(popup, text="Palabras más frecuentes:")
-    label.pack(padx=5, pady=5)
-
-    listbox = tk.Listbox(popup, width=50)
-    listbox.pack(padx=5, pady=5)
-
-    for word, freq in top_words:
-        listbox.insert(tk.END, f"{word} : {freq}")
-
-# ---- Botones ----
-tk.Button(root, text="Mostrar palabras frecuentes", command=show_most_frequent).pack(pady=5)
-tk.Button(root, text="Procesar texto completo", command=process_full_text).pack(pady=5)
-
-# ------------------ Eventos ---------------------
+# --- Eventos ---
 text_widget.bind("<KeyRelease>", check_last_word)
 text_widget.bind("<Double-Button-1>", show_suggestions)
 
+# --- Iniciar aplicación ---
 root.mainloop()

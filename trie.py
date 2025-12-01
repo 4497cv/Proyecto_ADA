@@ -14,13 +14,14 @@ class TrieNode:
         self.freq = 0  # contador de uso
 
 class Trie:
-    def __init__(self):
+    def __init__(self, language = "en", dict_size = 50000):
         self.root = TrieNode()
         self.all_words = []  # lista para recorrer fácilmente
         self.all_words_set = set()
+        self.language = language
 
         # descargar lista de la palabras mas usadas
-        words = top_n_list("en", 50000)  # 50k best English words
+        words = top_n_list(language, dict_size)  # 50k best English words
         
         for w in words:
             # verificar que la palabra no este en la lista de todas las palabras
