@@ -10,8 +10,8 @@ import re
 class TrieNode:
     def __init__(self):
         self.children = {}
-        self.is_end_of_word = False
-        self.frequency = 0  # contador de uso
+        self.is_eow = False
+        self.freq = 0  # contador de uso
 
 class Trie:
     def __init__(self):
@@ -60,14 +60,17 @@ class Trie:
             node = node.children[char]
 
         # indicamos que es el final del nodo
-        node.is_end_of_word = True
+        node.is_eow = True
+
+        if(node.freq == 0):
+            # agregamos la palabra a la lista de nuestras palabras usadas
+            self.all_words.append(word)
+            self.all_words_set.add(word)
+
         # incrementamos la frecuencia de uso de la palabra
-        node.frequency += 1
-        # agregamos la palabra a la lista de nuestras palabras usadas
-        self.all_words.append(word)
+        node.freq += 1
         #actualizamos el numero de palabras
         self.number_of_words = len(self.all_words)
-        self.all_words_set.add(word)
 
     def search(self, word):
         """
@@ -91,7 +94,7 @@ class Trie:
             node = node.children[ch]
         
         # verificamos que sea el final de la palabra y que si lo hayamos encontrado
-        if(node.is_end_of_word and ret_val):
+        if(node.is_eow and ret_val):
             ret_val = True
         else:
             ret_val = False
@@ -173,34 +176,20 @@ class Trie:
         # arreglo para ala
         similar_words = []
         results = []
-        word = word.lower()
+        
+        # iteramos entre las palabras almacenadas 
+        for w in self.all_words:
+            # calculamos el edit distance entre la palabra de entrada y la encontrada en la estructura trie
+            dist = self.levenshtein_distance(word, w)
 
-        frequent_words = self.get_most_frequent_words()
+            if(dist <= max_distance):
+                similar_words.append((w, dist))
 
-        for w, freq in frequent_words:
-            if((w in word) and (len(w)>1)):
-                results.append(w)
-
-        if(len(results) > 0):
-            return results
-        else:
-            # arreglo para ala
-            similar_words = []
-            results = []
-            
-            # iteramos entre las palabras almacenadas 
-            for w in self.all_words:
-                # calculamos el edit distance entre la palabra de entrada y la encontrada en la estructura trie
-                dist = self.levenshtein_distance(word, w)
-
-                if(dist <= max_distance):
-                    similar_words.append((w, dist))
-
-            # ordenamos por menor distancia
-            similar_words.sort(key=lambda x: x[1])
-            
-            for w, _ in similar_words:
-                results.append(w)
+        # ordenamos por menor distancia
+        similar_words.sort(key=lambda x: x[1])
+        
+        for w, _ in similar_words:
+            results.append(w)
                 
         return results
 
@@ -220,7 +209,7 @@ class Trie:
         for element in tokens_frases:
             self.insert(element)
 
-    def get_node_frequency(self, word):
+    def get_node_freq(self, word):
         """
         Funcion para obtener la frecuencia de uso de la palabra. La frecuencia de uso de la palabra se encuentra almacenada
         en el ultimo nodo de la secuencia de la palabra y se lee el valor de esta.
@@ -238,8 +227,8 @@ class Trie:
                 return 0
             node = node.children[ch]
 
-        if node.is_end_of_word:
-            ret_val = node.frequency
+        if node.is_eow:
+            ret_val = node.freq
         else:
             ret_val = 0
         
@@ -248,7 +237,7 @@ class Trie:
     def get_most_frequent_words(self, top_n=10):
         word_freq = {}
         for word in set(self.all_words):
-            freq = self.get_node_frequency(word)
+            freq = self.get_node_freq(word)
             word_freq[word] = freq
         
         # Ordenar por frecuencia descendente
@@ -256,7 +245,7 @@ class Trie:
         
         return sorted_words[:top_n]
     
-    def starts_with(self, word, len=3):
+    def starts_with(self, word, len=4):
         """
         Funcion para verificar si existe una palabra que comience con las primeras letras, que coincidan
         con el tamaño de la longitud dada a la entrada.
@@ -269,28 +258,59 @@ class Trie:
         len : int
             longitud de palabras iniciales a buscar
         """
-        ret_val = False
         # empezamos desde la raiz del arbol        
         node = self.root
         counter = 0
+        prefix = word[:len]
 
         # buscamos el caracter en la estructura trie
-        for ch in word:
+        for ch in prefix:
             if(ch not in node.children):
                 # nos detenemos si la palabra buscada ya no coincide
-                ret_val = False
-                break
+                return False
             # asignamos el nodo como el hijo del anterior
             node = node.children[ch]
 
-            if(counter >= len):
-                ret_val = True
-                break
-            else:
-                counter +=1
+        return True
     
-        return ret_val
+    def _dfs(self, node, prefix, results, max_lim=15):
+        if node.is_eow:
+            results.append(prefix)
+
+        for ch, child_node in node.children.items():
+            if(len(results) >= max_lim):
+                return
+            self._dfs(child_node, prefix + ch, results)
     
+    def autocomplete_prefix(self, prefix):
+        """
+        Funcion para obtener sugerencias que mas se aproximen a una palabra de un prefijo dado. 
+
+        Parametros:
+        self : objeto tipo Trie
+            Instancia de la clase Trie que llama a este método.
+        prefix : str
+            lista de palabras a procesar.
+        len : int
+            longitud de palabras iniciales a buscar
+        """
+        results = []
+        # empezamos desde la raiz del arbol        
+        node = self.root
+
+        # buscamos el caracter en la estructura trie
+        for ch in prefix:
+            if(ch not in node.children):
+                # nos detenemos si la palabra buscada ya no coincide
+                return []
+            # asignamos el nodo como el hijo del anterior
+            node = node.children[ch]
+
+        # busqueda por profundidad (DFS)
+        self._dfs(node, prefix, results)
+        return results
+
+
     def process_text_optimized(self, words_list, suggestion_size = 3):
         """
         Funcion para realizar el procesamiento de un texto completo. 
@@ -321,18 +341,27 @@ class Trie:
                 # agregar a lista de palabras encontradas
                 found_words.append(word)
             elif(self.starts_with(word, 2)):
-                # obtenemos palabras similares
-                sim_word = self.get_similar_words(word, max_distance=3)
-                # reducir el nuemero de sugerencias
-                sim_word = sim_word[:suggestion_size]
-
-                # verficar que por lo menos haya una sugerencia
-                if(len(sim_word) > 0):
-                    # agregar a palabras similares
-                    similar_words.append((word, sim_word))
+                autocomplete = self.autocomplete_prefix(word)
+                if(len(autocomplete) > 0):
+                    print("AUTOCOMPLETE: %s" % word)
+                    for sim_word in autocomplete:
+                        similar_words.append((word, sim_word))
+                    print(similar_words)      
                 else:
-                    # agregar a palabras no encontradas si sim_word esta vacio
-                    unfound_words.append(word)
+                    # asumimos que la palabra esta mal escrita y buscamos la que mas se aproxime
+                    # obtenemos palabras similares
+                    sim_word = self.get_similar_words(word, max_distance=3)
+                    # reducir el nuemero de sugerencias
+                    sim_word = sim_word[:suggestion_size]
+
+                    # verficar que por lo menos haya una sugerencia
+                    if(len(sim_word) > 0):
+                        print("MISPELLED: %s" % word)
+                        # agregar a palabras similares
+                        similar_words.append((word, sim_word))
+                    else:
+                        # agregar a palabras no encontradas si sim_word esta vacio
+                        unfound_words.append(word)
             else:
                 # agregar a lista de palabras no encontradas
                 unfound_words.append(word)   
@@ -370,5 +399,8 @@ def example():
     print("unfound_words words:")
     for word in unfound_words: 
         print(word)
+
+
+    print(trie.autocomplete_prefix("struc"))
     
 #example()
