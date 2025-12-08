@@ -1,8 +1,7 @@
-import nltk
-from nltk.corpus import words
-from nltk.tokenize import sent_tokenize
+#import nltk
+#from nltk.corpus import words
+#from nltk.tokenize import sent_tokenize
 import time
-import spacy
 from wordfreq import top_n_list
 from word_forms.word_forms import get_word_forms
 import re 
@@ -117,8 +116,7 @@ class Trie:
         diff_word_size = abs(size_word_a - size_word_b) 
         
         # evitar procesamiento si la longitud de ambas palabras es mayor a 2 caracteres
-
-        if diff_word_size > 2:
+        if(diff_word_size > 2):
             return 99
         
         dp_filas = size_word_a + 1
@@ -166,7 +164,7 @@ class Trie:
                 if min_cost < fila_min:
                     fila_min = min_cost
 
-            if fila_min > 2:
+            if(fila_min > 2):
                 return 99
 
         return dp[size_word_a][size_word_b]
@@ -195,10 +193,6 @@ class Trie:
         
         # iteramos entre las palabras almacenadas 
         for w in self.all_words:
-            if(len(w) < 3):
-                # evitamos palabras demasiado cortas
-                continue 
-
             if((abs(len(w) - len(word))) > max_distance):
                 continue
             
@@ -353,7 +347,6 @@ class Trie:
         self.__dfs(node, prefix, results)
         return results
 
-
     def process_text_optimized(self, words_list, suggestion_size = 3):
         """
         Funcion para realizar el procesamiento de un texto completo. 
@@ -407,7 +400,6 @@ class Trie:
                 unfound_words.append(word)   
 
         return found_words, similar_words, unfound_words
-
 
 def example():
     trie = Trie()
