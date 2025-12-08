@@ -1,7 +1,3 @@
-#import nltk
-#from nltk.corpus import words
-#from nltk.tokenize import sent_tokenize
-import time
 from wordfreq import top_n_list
 from word_forms.word_forms import get_word_forms
 import re 
@@ -17,6 +13,7 @@ class Trie:
         self.root = TrieNode()
         self.all_words = []  # lista para recorrer fácilmente
         self.all_words_set = set()
+        self.next_words = {}
         self.language = language
 
         # descargar lista de la palabras mas usadas
@@ -101,7 +98,7 @@ class Trie:
 
         return ret_val
         
-    def levenshtein_distance(self, word_a, word_b):
+    def levenshtein_distance(self, word_a, word_b, max_distance=2):
         """
         Calcula la distancia de levenshtein entre dos palabras.
         Utiliza programacion dinamica para obtener el edit distance.
@@ -164,7 +161,7 @@ class Trie:
                 if min_cost < fila_min:
                     fila_min = min_cost
 
-            if(fila_min > 2):
+            if(fila_min > max_distance):
                 return 99
 
         return dp[size_word_a][size_word_b]
@@ -197,7 +194,7 @@ class Trie:
                 continue
             
             # calculamos el edit distance entre la palabra de entrada y la encontrada en la estructura trie
-            dist = self.levenshtein_distance(word, w)
+            dist = self.levenshtein_distance(word, w, max_distance)
 
             if(dist <= max_distance):
                 similar_words.append((w, dist))
@@ -252,16 +249,31 @@ class Trie:
         return ret_val
 
     def get_most_frequent_words(self, top_n=10):
+        """
+        Funcion para obtener las palabras utilizadas con mayor frecuencia.
+
+        Parametros:
+        self : objeto tipo Trie
+            Instancia de la clase Trie que llama a este método.
+        word : str
+            palabra a buscar
+        len : int
+            longitud de palabras iniciales a buscar
+        """
         word_freq = {}
 
+        #iteramos entre todas las palabras agregadas a la trie
         for word in self.all_words:
+            #obtenemos su frecuencia
             freq = self.get_node_freq(word)
             word_freq[word] = freq
         
-        # Ordenar por frecuencia descendente
+        # Ordenar por frecuencia de forma descendente
         sorted_words = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)
+        # limitamos el numero de palabras
+        sorted_words = sorted_words[:top_n]
         
-        return sorted_words[:top_n]
+        return sorted_words
     
     def starts_with(self, word, len=4):
         """
@@ -347,6 +359,65 @@ class Trie:
         self.__dfs(node, prefix, results)
         return results
 
+    def save_next_words(self, words):
+        """
+        Funcion para guardar el orden de la secuencia de palabras a almacenar en la Trie.
+
+        Parametros:
+        self : objeto tipo Trie
+            Instancia de la clase Trie que llama a este método.
+        words : str
+            palabra a procesar
+        """       
+        word_size = len(words) - 1
+
+        for i in range(word_size):
+            # convertir las palabras a minusculas para poder procesarlas
+            word_1 = words[i].lower()
+            word_2 = words[i + 1].lower()
+
+            # inicializamos si no esta en las palabras siguiente 
+            if(word_1 not in self.next_words):
+                self.next_words[word_1] = {}
+
+            # inicializamos si no esta en las palabras siguiente de word 1
+            if(word_2 not in self.next_words[word_1]):
+                self.next_words[word_1][word_2] = 0
+
+            self.next_words[word_1][word_2] += 1
+    
+    def get_next_words(self, word, n_suggestions=5):
+        """
+        Funcion para obtener las palabras siguientes de una frase dada.
+
+        Parametros:
+        self : objeto tipo Trie
+            Instancia de la clase Trie que llama a este método.
+        word : str
+            palabra a procesar
+        len : int
+            longitud de palabras iniciales a buscar
+        """
+        # pasamos la palabra a minusculas para procesarla
+        word = word.lower()
+        results = []
+
+        # verificamos que la palabra se encuentre en las siguientes palabras
+        if word not in self.next_words:
+            return []
+
+        # obtenemos las posibles siguientes palabras 
+        next_words = self.next_words[word].items()
+
+        # ordenamos de forma acendente 
+        next_word_freq = sorted(next_words, key=lambda x: x[1], reverse=True)
+        next_word_freq = next_word_freq[:n_suggestions]
+
+        for w, _ in next_word_freq:
+            results.append(w)
+
+        return results
+
     def process_text_optimized(self, words_list, suggestion_size = 3):
         """
         Funcion para realizar el procesamiento de un texto completo. 
@@ -398,6 +469,9 @@ class Trie:
             else:
                 # agregar a lista de palabras no encontradas
                 unfound_words.append(word)   
+
+        # almacenamos la secuencia de palabras
+        self.save_next_words(words_list)
 
         return found_words, similar_words, unfound_words
 

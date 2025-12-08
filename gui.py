@@ -29,6 +29,7 @@ def new_file():
     if messagebox.askyesno("Nuevo archivo", "Se perderán los cambios no guardados."):
         text_widget.delete("1.0", tk.END)
         update_word_count()
+        update_suggestion_bar("")
 
 def open_file():
     file_path = filedialog.askopenfilename(filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
@@ -37,6 +38,7 @@ def open_file():
             text_widget.delete("1.0", tk.END)
             text_widget.insert("1.0", f.read())
         process_text()
+        update_suggestion_bar("")
 
 def save_file():
     file_path = filedialog.asksaveasfilename(defaultextension=".txt",
@@ -73,11 +75,9 @@ def process_text():
     text_widget.tag_remove("similar", "1.0", tk.END)
     text_widget.tag_remove("unfound", "1.0", tk.END)
 
-    # Solo palabras, sin signos de puntuación
     words_list = [w for w in re.findall(r"\b\w+\b", text)]
     found_words, similar_words, unfound_words = trie.process_text_optimized(words_list)
 
-    # aplicar tags en Text
     for match in re.finditer(r"\b\w+\b", text):
         word = match.group()
         start_index = f"1.0 + {match.start()}c"
@@ -95,12 +95,11 @@ def process_text():
 # --- Función para pegar y procesar automáticamente ---
 def on_paste(event=None):
     text_widget.event_generate("<<Paste>>")
-    root.after(10, process_text)  # procesar después del pegado
+    root.after(10, process_text)
     return "break"
 
 # --- Menú superior ---
 menu_bar = tk.Menu(root)
-
 file_menu = tk.Menu(menu_bar, tearoff=0)
 file_menu.add_command(label="New", command=new_file)
 file_menu.add_command(label="Open", command=open_file)
@@ -141,7 +140,7 @@ text_widget.config(yscrollcommand=scrollbar.set)
 
 text_widget.tag_configure("similar", underline=True, foreground="#ff4d4f")
 text_widget.tag_configure("unfound", underline=True, foreground="#1890ff")
-text_widget.tag_configure("black", foreground="#333")  # para palabras agregadas
+text_widget.tag_configure("black", foreground="#333")
 
 # --- Label inferior ---
 status_frame = tk.Frame(root, bg="#f8f8f8")
@@ -153,13 +152,28 @@ word_count_label.pack(side="left")
 language_label = tk.Label(status_frame, text="English", font=("Roboto", 8), fg="#555", bg="#f8f8f8")
 language_label.pack(side="right")
 
+suggestion_label = tk.Label(status_frame, text="Sugerencias: ", font=("Roboto", 8), fg="#000", bg="#f8f8f8")
+suggestion_label.pack(side="bottom", fill="x", pady=2)
+
 # --- Función para actualizar contador de palabras ---
 def update_word_count(event=None):
     text = text_widget.get("1.0", tk.END)
     words = [w for w in re.findall(r"\b\w+\b", text)]
     word_count_label.config(text=f"{len(words)} palabra{'s' if len(words)!=1 else ''}")
 
-# --- Sugerencias ---
+# --- Función para actualizar barra de sugerencias ---
+def update_suggestion_bar(word):
+    """Actualiza la barra inferior con sugerencias de palabras siguientes"""
+    if not word.strip():
+        suggestion_label.config(text="Sugerencias: ")
+        return
+    next_words = trie.get_next_words(word.lower())  # obtenemos palabras que siguen
+    if next_words:
+        suggestion_label.config(text="Sugerencias: " + ", ".join(next_words))
+    else:
+        suggestion_label.config(text="Sugerencias: (ninguna)")
+
+# --- Sugerencias popup ---
 suggestion_popup = None
 def show_suggestions(event):
     global suggestion_popup
@@ -177,11 +191,10 @@ def show_suggestions(event):
     elif "unfound" in tags:
         suggestions = []
 
-    # Separar con línea divisoria la opción de agregar palabra
     suggestions.append("---")
     suggestions.append("Agregar al diccionario")
 
-    if not suggestions: 
+    if not suggestions:
         return
 
     suggestion_popup = tk.Toplevel(root)
@@ -189,7 +202,6 @@ def show_suggestions(event):
     suggestion_popup.geometry(f"+{event.x_root+10}+{event.y_root+10}")
     suggestion_popup.configure(bg="#2c2c2c")
 
-    # Cerrar popup si se hace clic fuera
     def close_popup(event_inner):
         if suggestion_popup and suggestion_popup.winfo_exists():
             suggestion_popup.destroy()
@@ -216,7 +228,6 @@ def show_suggestions(event):
             text_widget.tag_remove("unfound", word_start, word_end)
             text_widget.tag_remove("similar", word_start, word_end)
             text_widget.tag_add("black", word_start, word_end)
-            process_text()
         elif selection == "---":
             return
         else:
@@ -224,21 +235,27 @@ def show_suggestions(event):
             text_widget.insert(word_start, selection)
             text_widget.tag_remove("unfound", word_start, word_end)
             text_widget.tag_remove("similar", word_start, word_end)
+            text_widget.tag_add("black", word_start, word_start + f"+{len(selection)}c")
+            trie.insert(selection.lower())
+
         if suggestion_popup and suggestion_popup.winfo_exists():
             suggestion_popup.destroy()
         root.unbind("<Button-1>")
+        check_last_word()
+        update_suggestion_bar(selection)
 
     listbox.bind("<Double-Button-1>", replace_word)
 
 # --- Revisar última palabra ---
 def check_last_word(event=None):
-    if event.keysym not in ("space", "Return", "period", "comma", "exclam", "question"): 
+    if event and event.keysym not in ("space", "Return", "period", "comma", "exclam", "question"):
         return
 
     cursor_index = text_widget.index("insert")
     text_up_to_cursor = text_widget.get("1.0", cursor_index)
     words = [w for w in re.findall(r"\b\w+\b", text_up_to_cursor)]
     if not words:
+        update_suggestion_bar("")
         return
 
     last_word = words[-1].lower()
@@ -259,9 +276,18 @@ def check_last_word(event=None):
         else:
             text_widget.tag_add("unfound", start_index, end_index)
 
+    # Guardar secuencia de palabras
+    if len(words) > 1:
+        trie.save_next_words([words[-2], words[-1]])
+
+    # Actualizar barra de sugerencias
+    update_suggestion_bar(last_word)
+
 # --- Eventos ---
 text_widget.bind("<KeyRelease>", lambda event: [check_last_word(event), update_word_count(event)])
 text_widget.bind("<Double-Button-1>", show_suggestions)
+text_widget.bind("<ButtonRelease-1>", lambda event: update_suggestion_bar(
+    text_widget.get("insert wordstart", "insert wordend")))
 text_widget.bind("<Control-v>", lambda e: on_paste())
 text_widget.bind("<Shift-Insert>", lambda e: on_paste())
 
